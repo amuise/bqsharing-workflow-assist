@@ -16,16 +16,21 @@ class TestBigQuerySharingAgent(unittest.TestCase):
     @patch('agent_engine.ChatVertexAI')
     @patch('agent_engine.bq_tools')
     @patch('agent_engine.dataplex_tools')
-    def test_search_flow(self, mock_dataplex, mock_bq, mock_llm_class):
+    @patch('agent_engine.data_product_tools')
+    def test_search_flow(self, mock_dp_tools, mock_dataplex, mock_bq, mock_llm_class):
         print("\n--- Testing Search Flow (Mocked) ---")
-        
+
         # 1. Setup Mocks
         # Mock LLM (Vertex AI)
         mock_llm_instance = MagicMock()
         mock_llm_class.return_value = mock_llm_instance
         # The agent uses the LLM in generate_response_node, but currently that node just dumps JSON.
         # However, the init calls ChatVertexAI.
-        
+
+        # Mock Data Product Tool (no co-listed products in this scenario)
+        mock_dp_tools.search_data_products.return_value = []
+        mock_dp_tools.find_matching_product.return_value = None
+
         # Mock BigQuery Tool
         mock_bq.search_listings.return_value = [
             {

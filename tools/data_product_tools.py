@@ -1,3 +1,4 @@
+import re
 from google.cloud import dataplex_v1
 from google.api_core import exceptions
 import logging
@@ -76,20 +77,27 @@ def find_matching_product(
     bq_listing: dict, data_products: list[dict]
 ) -> dict | None:
     """
-    Find the best-matching data product for a BQ Analytics Hub listing.
+    Find the data product that matches a BQ Analytics Hub listing.
 
-    Matching is done by display_name (case-insensitive substring).  Returns the
-    first match, or None if no candidate is found.
+    Matching is a strict equality check on the *normalized* display name
+    (lower-cased, with surrounding and repeated internal whitespace collapsed).
+
+    Strict equality is deliberate: products are co-published to Analytics Hub
+    and the Data Product API with identical or near-identical names, so an exact
+    normalized match is the expected case.  Loose/substring matching is avoided
+    because it would let an unrelated product whose name merely overlaps a
+    listing's name hijack that listing's surfaced metadata (owner, contact
+    email, documentation URL).
+
+    Returns the first product whose normalized name equals the listing's, or
+    None if there is no exact match.
     """
-    listing_name = bq_listing.get("display_name", "").lower().strip()
+    listing_name = _normalize_name(bq_listing.get("display_name", ""))
     if not listing_name:
         return None
 
     for product in data_products:
-        product_name = product.get("display_name", "").lower().strip()
-        if not product_name:
-            continue
-        if listing_name == product_name or listing_name in product_name or product_name in listing_name:
+        if _normalize_name(product.get("display_name", "")) == listing_name:
             return product
 
     return None
@@ -139,6 +147,17 @@ def merge_listing_with_data_product(bq_listing: dict, data_product: dict) -> dic
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _normalize_name(name: str) -> str:
+    """
+    Normalize a display name for comparison.
+
+    Lower-cases, strips leading/trailing whitespace, and collapses runs of
+    internal whitespace to a single space so that cosmetic differences between
+    a listing and its co-published data product do not defeat matching.
+    """
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
 
 def _is_data_product(entry) -> bool:
     """Return True when the Dataplex entry represents a data product."""

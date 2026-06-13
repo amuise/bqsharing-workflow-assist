@@ -9,6 +9,26 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _escape_mrkdwn(text) -> str:
+    """
+    Escape Slack mrkdwn control characters.
+
+    Listing and data product metadata can originate from outside the deploying
+    org, so titles/descriptions must be escaped before being interpolated into
+    a mrkdwn block to prevent markup or link injection.
+    """
+    if not text:
+        return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _safe_link_url(url) -> str | None:
+    """Return the URL only if it is a plain http(s) link, else None."""
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        return url
+    return None
+
 # Initialize Bolt App
 # In production, use os.environ for tokens
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
@@ -63,12 +83,17 @@ def handle_find_data(ack, body, logger):
         description = listing.get("description", "No description")
         quality_score = listing.get("data_quality_score", "N/A")
         
-        # Section with details
+        # Section with details. All free-text fields are escaped, and the title
+        # is only rendered as a link when the URL is a valid http(s) link.
+        display_md = _escape_mrkdwn(display_name)
+        link_url = _safe_link_url(listing.get("url"))
+        title_md = f"*<{link_url}|{display_md}>*" if link_url else f"*{display_md}*"
+
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*<{listing.get('url', '#')}|{display_name}>*\n{description}\n*Quality Score:* {quality_score}"
+                "text": f"{title_md}\n{_escape_mrkdwn(description)}\n*Quality Score:* {_escape_mrkdwn(quality_score)}"
             }
         })
         
