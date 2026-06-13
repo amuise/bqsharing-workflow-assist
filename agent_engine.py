@@ -3,7 +3,7 @@ import operator
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_google_vertexai import ChatVertexAI
-from tools import bq_tools, dataplex_tools
+from tools import bq_tools, dataplex_tools, data_product_tools
 import json
 
 # Define the state of the agent
@@ -11,6 +11,7 @@ class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
     query: str
     listings: Optional[List[dict]]
+    data_products: Optional[List[dict]]
     selected_listing_id: Optional[str]
     subscription_result: Optional[str]
 
@@ -26,6 +27,7 @@ class BigQuerySharingAgent:
 
         # Define nodes
         workflow.add_node("search_listings", self.search_listings_node)
+        workflow.add_node("enrich_with_data_products", self.enrich_with_data_products_node)
         workflow.add_node("enrich_listings", self.enrich_listings_node)
         workflow.add_node("rank_listings", self.rank_listings_node)
         workflow.add_node("generate_response", self.generate_response_node)
@@ -34,7 +36,7 @@ class BigQuerySharingAgent:
         # Define edges
         # We need a conditional edge to decide if we are searching or subscribing
         workflow.set_entry_point("determine_intent")
-        
+
         workflow.add_conditional_edges(
             "determine_intent",
             self.route_intent,
@@ -44,7 +46,8 @@ class BigQuerySharingAgent:
             }
         )
 
-        workflow.add_edge("search_listings", "enrich_listings")
+        workflow.add_edge("search_listings", "enrich_with_data_products")
+        workflow.add_edge("enrich_with_data_products", "enrich_listings")
         workflow.add_edge("enrich_listings", "rank_listings")
         workflow.add_edge("rank_listings", "generate_response")
         workflow.add_edge("generate_response", END)
@@ -70,6 +73,31 @@ class BigQuerySharingAgent:
         print(f"Searching for: {query}")
         results = bq_tools.search_listings(query, self.project_id, self.location)
         return {"listings": results, "query": query}
+
+    def enrich_with_data_products_node(self, state: AgentState):
+        """
+        Cross-reference BQ Analytics Hub listings against the Dataplex Data
+        Product catalog.  Listings that have a matching data product are merged
+        so the agent can surface all unique metadata from both sources.
+        """
+        listings = state.get("listings", [])
+        query = state.get("query", "")
+
+        products = data_product_tools.search_data_products(
+            query, self.project_id, self.location
+        )
+
+        enriched = []
+        for listing in listings:
+            matched = data_product_tools.find_matching_product(listing, products)
+            if matched:
+                enriched.append(
+                    data_product_tools.merge_listing_with_data_product(listing, matched)
+                )
+            else:
+                enriched.append(listing)
+
+        return {"listings": enriched, "data_products": products}
 
     def enrich_listings_node(self, state: AgentState):
         listings = state.get("listings", [])
