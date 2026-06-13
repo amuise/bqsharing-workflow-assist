@@ -19,7 +19,7 @@ class BigQuerySharingAgent:
     def __init__(self, project_id: str, location: str = "us-central1"):
         self.project_id = project_id
         self.location = location
-        self.llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0)
+        self.llm = ChatVertexAI(model_name="gemini-3.1-pro", temperature=0)
         self.graph = self._build_graph()
 
     def _build_graph(self):
