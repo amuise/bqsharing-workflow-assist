@@ -2,11 +2,12 @@
 
 An AI-powered Slack assistant that helps teams discover, evaluate, and subscribe to data listings in **BigQuery Analytics Hub**.
 
-Powered by **Google Cloud Vertex AI Agent Engine** and **LangGraph**, this agent intelligently searches listings, enriches them with **Dataplex** governance metadata (Data Quality, Contracts), and facilitates one-click subscriptions directly from Slack.
+Powered by **Google Cloud Vertex AI Agent Engine** and **LangGraph**, this agent intelligently searches listings, cross-references them with the **Dataplex Data Product catalog**, enriches them with governance metadata (Data Quality, Contracts), and facilitates one-click subscriptions directly from Slack.
 
 ## Features
 
 - 🔍 **Natural Language Search**: Ask "Find sales data for 2024" and get relevant results from BigQuery Analytics Hub.
+- 🗂️ **Data Product Enrichment**: Automatically cross-references BigQuery listings against the Dataplex Universal Catalog. When a listing is also registered as a Data Product, additional metadata is merged in — including owner team, domain, data classification, SLA tier, and status — with no duplicated fields.
 - 🛡️ **Governance-Aware Ranking**: Surfaces Data Quality scores and Data Contract status (via Dataplex) to help you choose the *best* data.
 - 💬 **Slack Integration**: Native Block Kit UI for browsing results and subscribing without context switching.
 - 🔗 **Deep Linking**: Direct links to the Google Cloud Console for deep dives into schema and lineage.
@@ -17,8 +18,31 @@ Powered by **Google Cloud Vertex AI Agent Engine** and **LangGraph**, this agent
 1.  **Slack App (Frontend)**: A lightweight Python app (`slack_bolt`) listening for slash commands and events.
 2.  **Agent Engine (Backend)**: Defines the reasoning logic using **LangGraph** around a Vertex AI model.
 3.  **Tools**:
-    - `bq_tools.py`: Interacts with the BigQuery Analytics Hub API for search an subscription.
-    - `dataplex_tools.py`: Fetches metadata from Dataplex Universal Catalog.
+    - `bq_tools.py`: Interacts with the BigQuery Analytics Hub API for search and subscription.
+    - `dataplex_tools.py`: Fetches Data Quality scores and Data Contract info from Dataplex.
+    - `data_product_tools.py`: Searches the Dataplex Universal Catalog for Data Product entries and merges them with matching BigQuery listings.
+
+### Agent Pipeline
+
+```
+search_listings → enrich_with_data_products → enrich_listings → rank_listings → generate_response
+```
+
+| Node | What it does |
+|---|---|
+| `search_listings` | Queries BigQuery Analytics Hub across all exchanges |
+| `enrich_with_data_products` | Matches each listing to a Dataplex Data Product; merges unique fields and surfaces any conflicting metadata |
+| `enrich_listings` | Adds Data Quality scores and Data Contract status via Dataplex |
+| `rank_listings` | Sorts by data quality score |
+| `generate_response` | Serialises results for the Slack app |
+
+### Data Product Merging
+
+When a BigQuery listing is co-listed as a Dataplex Data Product, the two records are merged:
+
+- **Shared fields** (`display_name`, `description`): the BigQuery value is kept as primary; if the Data Product carries a different value it is surfaced under `conflicting_fields` for transparency.
+- **Data Product-only fields** are collected under `data_product_unique_fields` and include: `owner_team`, `domain`, `data_classification`, `contact_email`, `status`, `sla_tier`, `update_frequency`, `documentation_url`, `linked_resources`.
+- **BigQuery-only fields** (`data_exchange`, `listing_id`, `exchange_id`, subscription info) are always preserved.
 
 ## Prerequisites
 
@@ -31,6 +55,7 @@ Powered by **Google Cloud Vertex AI Agent Engine** and **LangGraph**, this agent
 - **IAM Permissions**:
     - `BigQuery Data Exchange Listing User`
     - `Dataplex Metadata Reader`
+    - `Dataplex Catalog Editor` (to read Data Product entries)
     - `Vertex AI User`
 
 ## Installation
@@ -51,6 +76,8 @@ Powered by **Google Cloud Vertex AI Agent Engine** and **LangGraph**, this agent
     ```bash
     pip install google-cloud-bigquery-data-exchange google-cloud-dataplex google-cloud-aiplatform langgraph langchain-google-vertexai slack_bolt
     ```
+
+    > `google-cloud-dataplex` covers both Dataplex governance metadata and the Universal Catalog (Data Product) API — no additional package is required.
 
 ## Configuration
 
@@ -76,10 +103,14 @@ The app is configured to run the agent logic locally for development.
     `/find-data marketing data`
 
 ### Running Tests
-Verify the agent logic without Slack or full GCP credentials using the mocked test script:
+Verify the agent logic without Slack or full GCP credentials using the mocked test scripts:
 
 ```bash
+# Core search and subscription flows
 python tests/test_flow_mock.py
+
+# Data Product API integration and merge logic
+python tests/test_data_product_tools.py
 ```
 
 ## Deployment
