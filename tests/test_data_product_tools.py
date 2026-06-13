@@ -181,19 +181,25 @@ class TestFindMatchingProduct(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["name"], "dp1")
 
-    def test_partial_match_listing_in_product(self):
-        listing = _make_bq_listing(display_name="Sales Data")
+    def test_whitespace_normalized_match(self):
+        # Leading/trailing and repeated internal whitespace must not defeat the match.
+        listing = _make_bq_listing(display_name="  Global   Sales  Data ")
         result = find_matching_product(listing, self.products)
-        # "sales data" is a substring of "global sales data"
         self.assertIsNotNone(result)
         self.assertEqual(result["name"], "dp1")
 
-    def test_partial_match_product_in_listing(self):
+    def test_listing_substring_of_product_does_not_match(self):
+        # "Sales Data" is a substring of "Global Sales Data" but is NOT an exact
+        # match — strict matching must reject it to avoid metadata hijacking.
+        listing = _make_bq_listing(display_name="Sales Data")
+        result = find_matching_product(listing, self.products)
+        self.assertIsNone(result)
+
+    def test_product_substring_of_listing_does_not_match(self):
+        # "Finance Reports" is a substring of the listing name but not equal.
         listing = _make_bq_listing(display_name="Finance Reports Q4 2024")
         result = find_matching_product(listing, self.products)
-        # "finance reports" is a substring of the listing name
-        self.assertIsNotNone(result)
-        self.assertEqual(result["name"], "dp3")
+        self.assertIsNone(result)
 
     def test_no_match_returns_none(self):
         listing = _make_bq_listing(display_name="Unrelated Dataset XYZ")

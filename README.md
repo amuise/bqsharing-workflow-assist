@@ -38,7 +38,9 @@ search_listings → enrich_with_data_products → enrich_listings → rank_listi
 
 ### Data Product Merging
 
-When a BigQuery listing is co-listed as a Dataplex Data Product, the two records are merged:
+A listing is matched to a data product by a **strict equality check on the normalized display name** (lower-cased, with surrounding and repeated internal whitespace collapsed). This assumes products are co-published to Analytics Hub and the Data Product API with identical or near-identical names. Substring/fuzzy matching is intentionally avoided so an unrelated product cannot hijack a listing's surfaced governance metadata.
+
+When a BigQuery listing is matched to a Dataplex Data Product, the two records are merged:
 
 - **Shared fields** (`display_name`, `description`): the BigQuery value is kept as primary; if the Data Product carries a different value it is surfaced under `conflicting_fields` for transparency.
 - **Data Product-only fields** are collected under `data_product_unique_fields` and include: `owner_team`, `domain`, `data_classification`, `contact_email`, `status`, `sla_tier`, `update_frequency`, `documentation_url`, `linked_resources`.
